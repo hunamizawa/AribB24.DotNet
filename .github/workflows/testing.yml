@@ -17,6 +17,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
+    - name: Setup .net core 2.1.202 (2.0)
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: 2.1.202
+    - uses: actions/checkout@v2
     - name: Setup .net core 2.1.810
       uses: actions/setup-dotnet@v1
       with:
@@ -25,7 +30,10 @@ jobs:
       uses: actions/setup-dotnet@v1
       with:
         dotnet-version: 3.1.402
-    - name: .net SxS
+    - name: .net SxS #1
+      run: |
+        rsync -a ${DOTNET_ROOT/3.1.402/2.1.202}/* $DOTNET_ROOT/
+    - name: .net SxS #2
       run: |
         rsync -a ${DOTNET_ROOT/3.1.402/2.1.810}/* $DOTNET_ROOT/
     - name: Install dependencies
