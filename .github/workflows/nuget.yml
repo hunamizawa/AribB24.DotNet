@@ -9,14 +9,26 @@ jobs:
 
     runs-on: ubuntu-latest
     
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+
     steps:
     - uses: actions/checkout@v2
-    - name: Setup .NET Core
+    - name: Setup .net core 2.1.810
       uses: actions/setup-dotnet@v1
       with:
-        dotnet-version: 3.1.x
+        dotnet-version: 2.1.810
+    - name: Setup .net core 3.1.402
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: 3.1.402
+    - name: .net SxS
+      run: |
+        rsync -a ${DOTNET_ROOT/3.1.402/2.1.810}/* $DOTNET_ROOT/
     - name: Install dependencies
       run: dotnet restore
+
     - name: Create the package
       run: dotnet pack --configuration Release
     - name: Publish the package

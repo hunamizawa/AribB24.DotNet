@@ -1,0 +1,303 @@
+﻿<#@ template debug="true" hostspecific="true" language="C#" #>
+<#@ assembly name="System.Core" #>
+<#@ assembly name="System.ValueTuple" #>
+<#@ import namespace="System.IO" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Text" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ import namespace="System.Globalization" #>
+<#@ output extension=".cs" #>
+<#
+/************************************************
+JIS X 0213:2004 第1面 のテーブルを生成するスクリプト
+EUC-JP で変換できる範囲は省略する
+*************************************************/
+
+var eucjp = Encoding.GetEncoding(51932);
+var jisx0213File = this.Host.ResolvePath("jisx0213-2004-8bit-std.txt");
+var zen2hanFile = this.Host.ResolvePath("zen2han.txt");
+var (jisCodes, fullToHalfTable) = ReadJisX0213File(jisx0213File);
+ReadZen2HanFile(zen2hanFile, fullToHalfTable);
+
+// CP51932 でデコード可能かどうか
+var canParseEuc = jisCodes.ToDictionary(p => p.Key, p => false);
+
+#>
+using System.Collections.Generic;
+
+namespace AribB24.DotNet
+{
+    public partial class B24Decoder
+    {
+        /// <summary>
+        /// JIS X 0213:2004 第1面のテーブル。CP51932 でデコードできる文字は省略。全角・半角が選べる文字は全角にマッピング。
+        /// </summary>
+        internal static readonly IReadOnlyDictionary<int, string> jisx0213Plane1Table = new SortedList<int, string>
+        {
+<#
+
+foreach (var kvp in jisCodes)
+{
+    var kuTen = kvp.Key;
+    var codePoints = kvp.Value;
+
+    var str = CodepointsToString(codePoints);
+
+    var ku  = kuTen >> 8;   // 区番号 + 0x20
+    var ten = kuTen & 0xFF; // 点番号 + 0x20
+    var eucBytes = new byte[] { (byte)(ku + 0x80), (byte)(ten + 0x80) };  // EUC-JP による表現
+
+    if (eucjp.GetString(eucBytes) == str)
+    {
+        canParseEuc[kuTen] = true;
+        continue;
+    }
+
+    var tx2 = string.Join("", codePoints.SelectMany(p => ToUtf16(p)).Select(p => $"\\u{p:X4}"));
+#>
+            [0x<#= $"{kuTen:X4}" #>] = "<#= tx2 #>", // "<#= str #>"
+<#
+}
+#>
+        };
+
+        /// <summary>
+        /// 全角文字を半角文字に変換するためのテーブル
+        /// </summary>
+        internal static readonly IReadOnlyDictionary<string, string> fullToHalfTable = new Dictionary<string, string>
+        {
+<#
+foreach (var kvp in fullToHalfTable)
+{
+    var full = CodepointsToString(kvp.Key);
+    var half = CodepointsToString(kvp.Value);
+#>
+            ["<#= AsUnicodeLiteral(full) #>"] = "<#= AsUnicodeLiteral(half) #>", // <#= full #> -> <#= half #>
+<#
+}
+#>
+        };
+
+        /// <summary>
+        /// 半角文字を全角文字に変換するためのテーブル
+        /// </summary>
+        internal static readonly IReadOnlyDictionary<string, string> halfToFullTable = new Dictionary<string, string>
+        {
+<#
+foreach (var kvp in fullToHalfTable)
+{
+    var full = CodepointsToString(kvp.Key);
+    var half = CodepointsToString(kvp.Value);
+#>
+            ["<#= AsUnicodeLiteral(half) #>"] = "<#= AsUnicodeLiteral(full) #>", // <#= half #> -> <#= full #>
+<#
+}
+#>
+        };
+
+        /// <summary>
+        /// EUC-JP (CP51932) でデコードできる文字かどうか判定
+        /// </summary>
+        internal static bool CanParseEUCJP(int ku, int ten)
+        {
+            return ku switch
+            {
+<#
+for (var k = 0x21; k <= 0x7E; k++)
+{
+    var subDic = canParseEuc
+        .Where(p => p.Key >> 8 == k) // 区番号 k に対応する文字だけ取り出す
+        .ToDictionary(p => p.Key & 0xFF, p => p.Value);
+
+    if (subDic.Values.All(p => !p))
+    {
+#>
+                /* <#= $"{k - 0x20,2}" #>区 */ 0x<#= $"{k:X2}" #> => false,
+<#
+        continue;
+    }
+
+    if (subDic.Values.All(p => p))
+        continue;
+
+    var trueExpressions = new List<string>();
+    
+    var start = 0x21;
+    for (var t = 0x21; t <= 0x7E; t++)
+    {
+        // 点番号に対応する文字が存在しない場合は true, false どちらに取ってもよい
+        if (!subDic.TryGetValue(t, out var result))
+            continue;
+
+        if (!result)
+        {
+            start = t + 1;
+            continue;
+        }
+
+        var end = t;
+        for (var i = t + 1; i <= 0x7E; i++)
+        {
+            if (!subDic.TryGetValue(i, out result))
+                continue;
+
+            if (!result)
+            {
+                t = i;
+                break;
+            }
+
+            end = i;
+        }
+
+        if (start == end)
+        {
+            trueExpressions.Add($"ten == 0x{start:X2}");
+        }
+        else if (start == end + 1)
+        {
+            trueExpressions.Add($"ten == 0x{start:X2}");
+            trueExpressions.Add($"ten == 0x{end:X2}");
+        }
+        else if (start == 0x21)
+        {
+            trueExpressions.Add($"ten <= 0x{end:X2}");
+        }
+        else if (end == 0x7E)
+        {
+            trueExpressions.Add($"0x{start:X2} <= ten");
+        }
+        else
+        {
+            trueExpressions.Add($"(0x{start:X2} <= ten && ten <= 0x{end:X2})");
+        }
+
+        start = t + 1;
+    }
+#>
+                /* <#= $"{k - 0x20,2}" #>区 */ 0x<#= $"{k:X2}" #> => <#= string.Join(" || ", trueExpressions) #>,
+<#
+}
+#>
+                _ => true,
+            };
+        }
+    }
+}
+
+<#+
+// "jisx0213-2004-8bit-std.txt" をパースする
+private (IReadOnlyDictionary<int, int[]> jisCodes, Dictionary<int[], int[]> fullToHalf) ReadJisX0213File(string file)
+{
+    var jisCodes   = new Dictionary<int, int[]>();
+    var fullToHalf = new Dictionary<int[], int[]>();
+
+    foreach (var line in File.ReadLines(file, Encoding.UTF8))
+    {
+        if (!line.Any() || line[0] == '#')
+            continue;
+
+        var cols = line.Split('\t');
+
+        if (cols.Length < 2 || cols[1].Length == 0)
+            continue;
+
+        var kuTen      = int.Parse(cols[0].Substring(2), NumberStyles.HexNumber);
+        var windows    = cols.FirstOrDefault(p => p.StartsWith("Windows: U+"));
+        var fullwidth  = cols.FirstOrDefault(p => p.StartsWith("Fullwidth: U+"));
+        var codePoints = ParseCodePoints(windows ?? fullwidth ?? cols[1]);
+
+        jisCodes.Add(kuTen, codePoints);
+        if (fullwidth != null)
+            fullToHalf.Add(codePoints, ParseCodePoints(cols[1]));
+    }
+
+    return (jisCodes, fullToHalf);
+}
+
+// "U+aaaa+bbbb" のように表現されているコードポイント列を、int[] { 0xaaaa, 0xbbbb } に変換
+private int[] ParseCodePoints(string cp)
+{
+    return cp.Split('+')
+        .Skip(1)
+        .Select(p => int.Parse(p, NumberStyles.HexNumber))
+        .ToArray();
+}
+
+// int 型のコードポイント列を string に変換
+private string CodepointsToString(IEnumerable<int> codePoints)
+{
+    return string.Join("", (codePoints.Select(p => char.ConvertFromUtf32(p))));
+}
+
+// string を int 型のコードポイント列に変換
+private int[] StringToCodepoints(string str)
+{
+    static IEnumerable<int> hoge(string s)
+    {
+        for (var i = 0; i < s.Length; i++)
+        {
+            if (char.IsSurrogate(s[i]))
+            {
+                yield return char.ConvertToUtf32(s, i);
+                i++;
+            }
+            else
+            {
+                yield return s[i];
+            }
+        }
+    }
+
+    return hoge(str).ToArray();
+}
+
+// コードポイント utf32 を、UTF-16 形式の表現に変換
+private IEnumerable<int> ToUtf16(int utf32)
+{
+    if (utf32 < 0x10000)
+    {
+        yield return utf32;
+        yield break;
+    }
+
+    var high = 0xD800 | (((utf32 >> 16) - 1) << 6) | ((utf32 >> 10) & 0x3F);
+    yield return high;
+
+    var low = 0xDC00 | (utf32 & 0x3FF);
+    yield return low;
+}
+
+private string EscapeLiteral(string str)
+{
+    return str.Replace("\\", "\\\\").Replace("\"", "\\\"");
+}
+
+private string AsUnicodeLiteral(string str)
+{
+    return string.Join("", str.Select(p => $"\\u{(int)p:X4}"));
+}
+
+// "zen2han.txt" をパースする
+private void ReadZen2HanFile(string file, Dictionary<int[], int[]> fullToHalf)
+{
+    foreach (var line in File.ReadLines(file, Encoding.UTF8))
+    {
+        if (!line.Any() || line[0] == '#')
+            continue;
+
+        var cols = line.Split('\t');
+
+        if (cols.Length < 2)
+            continue;
+
+        var full = StringToCodepoints(cols[0]);
+        var half = StringToCodepoints(cols[1]);
+        if (fullToHalf.ContainsKey(full))
+            fullToHalf[full] = half;
+        else
+            fullToHalf.Add(full, half);
+    }
+}
+
+#>
