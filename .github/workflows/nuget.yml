@@ -2,7 +2,7 @@ name: Release to NuGet on creating new release
 
 on:
   release:
-    types: released
+    types: published
 
 jobs:
   publish:
