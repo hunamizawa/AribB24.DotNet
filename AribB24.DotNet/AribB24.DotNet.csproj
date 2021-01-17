@@ -3,6 +3,8 @@
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0;netcoreapp2.1;netstandard2.1</TargetFrameworks>
     <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <WarningsAsErrors>NU1605; nullable</WarningsAsErrors>
     <Version>0.1.0-beta2</Version>
     <Authors>hunamizawa</Authors>
     <Description>"ARIB STD-B24 8-bit Character Code" decoder for .NET Standard.

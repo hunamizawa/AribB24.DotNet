@@ -22,7 +22,7 @@ namespace AribB24.DotNet
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
             sjis = Encoding.GetEncoding(932);
             eucjp = Encoding.GetEncoding(51932);
-    }
+        }
 
         private static bool IsCx(byte value) => (value & 0b_0110_0000) == 0;
         private static bool IsCL(byte value) => (value & 0b_1110_0000) == 0;
@@ -37,6 +37,9 @@ namespace AribB24.DotNet
         /// <returns></returns>
         public string GetString(byte[] bytes)
         {
+            if (bytes is null)
+                throw new ArgumentNullException(nameof(bytes));
+
 #if NETSTANDARD2_0
             return GetString(bytes, 0, bytes.Length);
 #else
@@ -53,6 +56,9 @@ namespace AribB24.DotNet
         /// <returns></returns>
         public string GetString(byte[] bytes, int index, int count)
         {
+            if (bytes is null)
+                throw new ArgumentNullException(nameof(bytes));
+            
             if (bytes.Length <= index)
                 throw new ArgumentOutOfRangeException(nameof(index));
 
@@ -628,7 +634,7 @@ namespace AribB24.DotNet
                     return convToHalfIf(halfwidthFlag, jisx0201FullwidthTable[code]);
 
                 default:
-                    return null;
+                    throw new InvalidOperationException($"未定義の {nameof(GraphicSet)}");
             }
         }
     }
@@ -656,7 +662,7 @@ namespace AribB24.DotNet
                 case DecodeCondition.RequireConvToGR:
                     return (byte)(value | 0b_1000_0000);
                 default:
-                    throw new NotImplementedException();
+                    throw new InvalidOperationException($"未定義の {nameof(DecodeCondition)}");
             }
         }
     }

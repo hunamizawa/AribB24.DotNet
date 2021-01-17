@@ -78,7 +78,7 @@ namespace AribB24.DotNet.Tests
         [Fact]
         public void Decodes_Katakana_Hiragana_Collectly()
         {
-            var patterns = new Dictionary<int, (string, string, string)>
+            var patterns = new Dictionary<int, (string fullKatakana, string halfKatakana, string? hiragana)>
             {
                 [0x21] = ("ァ", "ｧ", "ぁ"),
                 [0x22] = ("ア", "ｱ", "あ"),
@@ -188,8 +188,8 @@ namespace AribB24.DotNet.Tests
 
             foreach (var (code, v) in patterns)
             {
-                var expected = (v.Item3 ?? v.Item1) + v.Item1 + v.Item2;
-                bs[6] = (byte)(v.Item3 is null ? code : (code + 0x80));
+                var expected = (v.hiragana ?? v.fullKatakana) + v.fullKatakana + v.halfKatakana;
+                bs[6] = (byte)(v.hiragana is null ? code : (code + 0x80));
                 bs[7] = bs[9] = (byte)code;
                 var actual = encoder.GetString(bs);
                 //Assert.AreEqual(expected, actual, "Expected:<{0}>. Actual:<{1}>. 0x{2:X2}", AsUnicodeLiteral(expected), AsUnicodeLiteral(actual), code);
