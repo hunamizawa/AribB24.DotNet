@@ -8,11 +8,7 @@ on:
 
 jobs:
   build:
-    name: .NET Core ${{ matrix.dotnet_core }}
-
-    strategy:
-      matrix:
-        dotnet_core: [ '2.0', '2.1', '3.1' ]
+    name: Build and Test
     
     runs-on: ubuntu-latest
     
@@ -53,5 +49,14 @@ jobs:
     - name: Build
       run: dotnet build AribB24.DotNet/AribB24.DotNet.csproj --no-restore --configuration Release
 
-    - name: Test
-      run: dotnet test AribB24.DotNet.Tests/AribB24.DotNet.Tests.csproj --configuration Release --framework ${{ format('netcoreapp{0}', matrix.dotnet_core) }}
+    - name: Test on .NET 5
+      run: dotnet test AribB24.DotNet.Tests/AribB24.DotNet.Tests.csproj --configuration Release --framework net5.0
+
+    - name: Test on .NET Core 3.1
+      run: dotnet test AribB24.DotNet.Tests/AribB24.DotNet.Tests.csproj --configuration Release --framework netcoreapp3.1
+
+    - name: Test on .NET Core 2.1
+      run: dotnet test AribB24.DotNet.Tests/AribB24.DotNet.Tests.csproj --configuration Release --framework netcoreapp2.1
+
+    - name: Test on .NET Core 2.0
+      run: dotnet test AribB24.DotNet.Tests/AribB24.DotNet.Tests.csproj --configuration Release --framework netcoreapp2.0
