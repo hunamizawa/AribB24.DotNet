@@ -106,8 +106,12 @@ namespace AribB24.DotNet
                 var currentIsEUC = IsEUC(glSet, g[gr], bytes, i);
                 if (currentIsEUC != DecodeCondition.Never)
                 {
-                    if (!ProcessAsEUC(bytes, sb, endOfBytes, currentIsGL, currentIsEUC, halfwidthFlag, ref i))
+                    var (str, consumed) = ProcessAsEUC(bytes, i, endOfBytes, currentIsGL, currentIsEUC, halfwidthFlag);
+                    if (str is null)
                         break;
+                    sb.Append(str);
+                    i += consumed - 1;
+
                     if (currentIsGL && isGLSS)
                         glSingleShift = -1;
                     continue;
@@ -116,22 +120,22 @@ namespace AribB24.DotNet
                 var currentIsCP932 = IsCP932(glSet, g[gr], bytes, i);
                 if (currentIsCP932 != DecodeCondition.Never)
                 {
-                    if (!ProcessAsCP932(bytes, sb, endOfBytes, currentIsGL, currentIsCP932, halfwidthFlag, ref i))
+                    var str = ProcessAsCP932(bytes, i, currentIsGL, currentIsCP932, halfwidthFlag);
+                    if (str is null)
                         break;
+                    sb.Append(str);
                     if (currentIsGL && isGLSS)
                         glSingleShift = -1;
                     continue;
                 }
 
-                if (currentIsGL)
+                if (currentIsGL || IsGR(current))
                 {
-                    if (!ProcessGx(bytes, sb, endOfBytes, glSet, halfwidthFlag, ref i))
+                    var (str, consumed) = ProcessGx(bytes, i, endOfBytes, currentIsGL ? glSet : g[gr], halfwidthFlag);
+                    if (str is null)
                         break;
-                }
-                else if (IsGR(current))
-                {
-                    if (!ProcessGx(bytes, sb, endOfBytes, g[gr], halfwidthFlag, ref i))
-                        break;
+                    sb.Append(str);
+                    i += consumed - 1;
                 }
                 else
                 {
@@ -143,41 +147,37 @@ namespace AribB24.DotNet
             return sb.ToString();
         }
 
-        private static bool ProcessAsEUC(
+        private static (string? result, int consumedBytes) ProcessAsEUC(
 #if NETSTANDARD2_0
             byte[]             bytes,
 #else
             ReadOnlySpan<byte> bytes,
 #endif
-            StringBuilder sb,
-            int endOfBytes,
+            int i,
+            int count,
             bool currentIsGL,
             DecodeCondition currentIsEUC,
-            bool halfwidthFlag,
-            ref int i)
+            bool isHalfwidth)
         {
             var current = bytes[i];
 
             // EUC-JP の GL 領域は ASCII 固定
-            var isASCII = (currentIsGL && currentIsEUC == DecodeCondition.RequireNoConv) || currentIsEUC == DecodeCondition.RequireConvToGL;
+            var isASCII = (currentIsGL && currentIsEUC == DecodeCondition.RequireNoConv) ||
+                currentIsEUC == DecodeCondition.RequireConvToGL;
             if (isASCII)
             {
                 var isYenSign = (current & 0b_0111_1111) == 0x5C;
                 if (isYenSign)
-                {
-                    sb.Append(halfwidthFlag ? '\u00A5' : '\uFFE5');
-                }
-                else if (currentIsGL)
+                    return (isHalfwidth ? "\u00A5" : "\uFFE5", 1);
+
+                string str;
+                if (currentIsGL)
                 {
 #if NETSTANDARD2_0
-                    var str = eucjp.GetString(bytes, i, 1);
+                    str = eucjp.GetString(bytes, i, 1);
 #else
-                    var str = eucjp.GetString(bytes.Slice(i, 1));
+                    str = eucjp.GetString(bytes.Slice(i, 1));
 #endif
-                    if (!halfwidthFlag && halfToFullTable.TryGetValue(str, out var fullwidth))
-                        sb.Append(fullwidth);
-                    else
-                        sb.Append(str);
                 }
                 else
                 {
@@ -189,18 +189,21 @@ namespace AribB24.DotNet
                     {
                         (byte)(current & 0b_0111_1111)
                     };
-                    var str = eucjp.GetString(buffer);
-                    if (!halfwidthFlag && halfToFullTable.TryGetValue(str, out var fullwidth))
-                        sb.Append(fullwidth);
-                    else
-                        sb.Append(str);
+                    str = eucjp.GetString(buffer);
                 }
+
+                if (!isHalfwidth && halfToFullTable.TryGetValue(str, out var fullwidth))
+                    return (fullwidth, 1);
+                else
+                    return (str, 1);
             }
             else
             {
-                if (++i >= endOfBytes) return false;
+                if (++i >= count)
+                    return (null, 1);
                 var next = bytes[i];
 
+                string str;
                 if (currentIsGL)
                 {
 #if NETSTANDARD2_0
@@ -212,34 +215,35 @@ namespace AribB24.DotNet
                         (byte)(current | 0b_1000_0000),
                         (byte)(next    | 0b_1000_0000)
                     };
-                    var str = eucjp.GetString(buffer);
-                    if (halfwidthFlag && fullToHalfTable.TryGetValue(str, out var halfwidth))
-                        sb.Append(halfwidth);
-                    else
-                        sb.Append(str);
+                    str = eucjp.GetString(buffer);
                 }
                 else
                 {
 #if NETSTANDARD2_0
-                    var str = eucjp.GetString(bytes, i, 2);
+                    str = eucjp.GetString(bytes, i, 2);
 #else
-                    var str = eucjp.GetString(bytes.Slice(i, 2));
+                    str = eucjp.GetString(bytes.Slice(i, 2));
 #endif
-                    if (halfwidthFlag && fullToHalfTable.TryGetValue(str, out var halfwidth))
-                        sb.Append(halfwidth);
-                    else
-                        sb.Append(str);
                 }
+
+                if (isHalfwidth && fullToHalfTable.TryGetValue(str, out var halfwidth))
+                    return (halfwidth, 2);
+                else
+                    return (str, 2);
             }
-            return true;
         }
 
 
+        private static string? ProcessAsCP932(
 #if NETSTANDARD2_0
-        private static bool ProcessAsCP932(byte[]             bytes, StringBuilder sb, int endOfBytes, bool currentIsGL, DecodeCondition currentIsCP932, bool halfwidthFlag, ref int i)
+            byte[]             bytes,
 #else
-        private static bool ProcessAsCP932(ReadOnlySpan<byte> bytes, StringBuilder sb, int endOfBytes, bool currentIsGL, DecodeCondition currentIsCP932, bool halfwidthFlag, ref int i)
+            ReadOnlySpan<byte> bytes,
 #endif
+            int i,
+            bool currentIsGL,
+            DecodeCondition currentIsCP932,
+            bool isHalfwidth)
         {
             var current = bytes[i];
 
@@ -247,86 +251,77 @@ namespace AribB24.DotNet
             var isYenSign = (currentIsCP932 == DecodeCondition.RequireNoConv   && current == 0x5C) ||
                             (currentIsCP932 == DecodeCondition.RequireConvToGL && current == 0xDC);
             if (isYenSign)
-            {
-                sb.Append(halfwidthFlag ? '\u00A5' : '\uFFE5');
-            }
-            else if (currentIsCP932 == DecodeCondition.RequireNoConv)
+                return isHalfwidth ? "\u00A5" : "\uFFE5";
+
+            string str;
+            if (currentIsCP932 == DecodeCondition.RequireNoConv)
             {
 #if NETSTANDARD2_0
-                var str = sjis.GetString(bytes, i, 1);
+                str = sjis.GetString(bytes, i, 1);
 #else
-                var str = sjis.GetString(bytes.Slice(i, 1));
+                str = sjis.GetString(bytes.Slice(i, 1));
 #endif
-                if (!halfwidthFlag && halfToFullTable.TryGetValue(str, out var fullwidth))
-                    sb.Append(fullwidth);
-                else
-                    sb.Append(str);
             }
             else
             {
 #if NETSTANDARD2_0
-                byte[] buffer = new byte[1];
+                byte[] buffer = new byte[]
 #else
-                Span<byte> buffer = stackalloc byte[1];
+                Span<byte> buffer = stackalloc byte[]
 #endif
-                if (currentIsCP932 == DecodeCondition.RequireConvToGL)
-                    buffer[0] = (byte)(current & 0b_0111_1111);
-                else
-                    buffer[0] = (byte)(current | 0b_1000_0000);
-
-                var str = sjis.GetString(buffer);
-                if (!halfwidthFlag && halfToFullTable.TryGetValue(str, out var fullwidth))
-                    sb.Append(fullwidth);
-                else
-                    sb.Append(str);
+                {
+                    currentIsCP932 is DecodeCondition.RequireConvToGL ?
+                        (byte)(current & 0b_0111_1111) :
+                        (byte)(current | 0b_1000_0000)
+                };
+                str = sjis.GetString(buffer);
             }
-            return true;
+            if (!isHalfwidth && halfToFullTable.TryGetValue(str, out var fullwidth))
+                return fullwidth;
+            else
+                return str;
         }
 
+        private static (string? result, int consumedBytes) ProcessGx(
 #if NETSTANDARD2_0
-        private static bool ProcessGx(byte[]             bytes, StringBuilder sb, int endOfBytes, GraphicSet set, bool halfwidth, ref int i)
+            byte[]             bytes,
 #else
-        private static bool ProcessGx(ReadOnlySpan<byte> bytes, StringBuilder sb, int endOfBytes, GraphicSet set, bool halfwidth, ref int i)
+            ReadOnlySpan<byte> bytes,
 #endif
+            int i,
+            int count,
+            GraphicSet set,
+            bool isHalfwidth)
         {
             var current = bytes[i] & 0b_0111_1111;
             var currentIsGL = IsGL(bytes[i]);
 
             if (set.Is2bytesSet())
             {
-                if (++i >= endOfBytes) return false;
+                if (++i >= count)
+                    return (null, 1);
+
                 var next = bytes[i] & 0b_0111_1111;
-                
+
                 if (currentIsGL != IsGL(bytes[i]))
                     throw new InvalidOperationException("IsGL(current) != IsGL(next)");
 
                 var code = (current << 8) + next;
-                var str = LookupChar(set, code, halfwidth);
-                sb.Append(str);
+                return (LookupChar(set, code, isHalfwidth), 2);
             }
-            else if (set == GraphicSet.JISX0201Katakana && !halfwidth && i + 1 < endOfBytes)
+
+            if (set == GraphicSet.JISX0201Katakana && !isHalfwidth && i + 1 < count)
             {
                 var next = bytes[i] & 0b_0111_1111;
                 if (next == 0x5E || next == 0x5F)
                 {
                     // 次の文字が濁点・半濁点のとき、全角では1文字に結合できるのでそうする
-                    i++;
                     var code = (current << 8) + next;
-                    var str = LookupChar(set, code, halfwidth);
-                    sb.Append(str);
-                }
-                else
-                {
-                    var str = LookupChar(set, current, halfwidth);
-                    sb.Append(str);
+                    return (LookupChar(set, code, isHalfwidth), 2);
                 }
             }
-            else
-            {
-                var str = LookupChar(set, current, halfwidth);
-                sb.Append(str);
-            }
-            return true;
+
+            return (LookupChar(set, current, isHalfwidth), 1);
         }
 
         private enum Pane
@@ -432,11 +427,20 @@ namespace AribB24.DotNet
             return DecodeCondition.Never;
         }
 
+        private static bool ProcessControlCodes(
 #if NETSTANDARD2_0
-        private static bool ProcessControlCodes(byte[]             bytes, StringBuilder sb, int endOfBytes, GraphicSet[] g, ref int gl, ref int gr, ref int glSingleShift, ref bool halfwidthFlag, ref int i)
+            byte[]             bytes,
 #else
-        private static bool ProcessControlCodes(ReadOnlySpan<byte> bytes, StringBuilder sb, int endOfBytes, GraphicSet[] g, ref int gl, ref int gr, ref int glSingleShift, ref bool halfwidthFlag, ref int i)
+            ReadOnlySpan<byte> bytes,
 #endif
+            StringBuilder sb,
+            int endOfBytes,
+            GraphicSet[] g,
+            ref int gl,
+            ref int gr,
+            ref int glSingleShift,
+            ref bool halfwidthFlag,
+            ref int i)
         {
             // return false は大域脱出（forループ終了）の意
 
