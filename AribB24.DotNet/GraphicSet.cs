@@ -62,26 +62,20 @@
         /// </summary>
         public static bool Is2bytesSet(this GraphicSet set)
         {
-            return set == GraphicSet.Kanji
-                || set == GraphicSet.JISCompatibleKanji_Plane1
-                || set == GraphicSet.JISCompatibleKanji_Plane2
-                || set == GraphicSet.AdditionalSymbols
-                || set == GraphicSet.DRCS0;
+            return set is GraphicSet.Kanji
+                or GraphicSet.JISCompatibleKanji_Plane1
+                or GraphicSet.JISCompatibleKanji_Plane2
+                or GraphicSet.AdditionalSymbols
+                or GraphicSet.DRCS0;
         }
 
         public static bool IsAlphanumeric(this GraphicSet set)
-        {
-            return set == GraphicSet.Alphanumeric || set == GraphicSet.ProportionalAlphanumeric;
-        }
+            => set is GraphicSet.Alphanumeric or GraphicSet.ProportionalAlphanumeric;
 
         public static bool IsHiragana(this GraphicSet set)
-        {
-            return set == GraphicSet.Hiragana || set == GraphicSet.ProportionalHiragana;
-        }
+            => set is GraphicSet.Hiragana or GraphicSet.ProportionalHiragana;
 
         public static bool IsKatakana(this GraphicSet set)
-        {
-            return set == GraphicSet.Katakana || set == GraphicSet.ProportionalKatakana;
-        }
+            => set is GraphicSet.Katakana or GraphicSet.ProportionalKatakana;
     }
 }
