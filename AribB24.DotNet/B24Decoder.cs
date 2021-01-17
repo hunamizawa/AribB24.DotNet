@@ -604,38 +604,34 @@ namespace AribB24.DotNet
                 return full;
             }
 
-            switch (set)
+            return set switch
             {
-                case GraphicSet.Kanji:
-                    throw new InvalidOperationException("漢字系集合の振り分けに失敗している");
+                GraphicSet.Kanji
+                    => throw new InvalidOperationException("漢字系集合の振り分けに失敗している"),
 
-                case GraphicSet.JISCompatibleKanji_Plane1:
-                    return convToHalfIf(halfwidthFlag, jisx0213Plane1Table[code]);
+                GraphicSet.JISCompatibleKanji_Plane1
+                    => convToHalfIf(halfwidthFlag, jisx0213Plane1Table[code]),
 
-                case GraphicSet.JISCompatibleKanji_Plane2:
-                    return jisx0213Plane2Table[code];
+                GraphicSet.JISCompatibleKanji_Plane2
+                    => jisx0213Plane2Table[code],
 
-                case GraphicSet.AdditionalSymbols:
-                    return additionalSymbolTable[code];
+                GraphicSet.AdditionalSymbols
+                    => additionalSymbolTable[code],
 
-                case GraphicSet.Alphanumeric:
-                case GraphicSet.ProportionalAlphanumeric:
-                    return convToHalfIf(halfwidthFlag, jisx0201FullwidthTable[code]);
+                GraphicSet.Alphanumeric or GraphicSet.ProportionalAlphanumeric
+                    => convToHalfIf(halfwidthFlag, jisx0201FullwidthTable[code]),
 
-                case GraphicSet.Hiragana:
-                case GraphicSet.ProportionalHiragana:
-                    return hiraganaTable[code];
+                GraphicSet.Hiragana or GraphicSet.ProportionalHiragana
+                    => hiraganaTable[code],
 
-                case GraphicSet.Katakana:
-                case GraphicSet.ProportionalKatakana:
-                    return convToHalfIf(halfwidthFlag, katakanaTable[code]);
+                GraphicSet.Katakana or GraphicSet.ProportionalKatakana
+                    => convToHalfIf(halfwidthFlag, katakanaTable[code]),
 
-                case GraphicSet.JISX0201Katakana:
-                    return convToHalfIf(halfwidthFlag, jisx0201FullwidthTable[code]);
+                GraphicSet.JISX0201Katakana
+                    => convToHalfIf(halfwidthFlag, jisx0201FullwidthTable[code]),
 
-                default:
-                    throw new InvalidOperationException($"未定義の {nameof(GraphicSet)}");
-            }
+                _ => throw new InvalidOperationException($"未定義の {nameof(GraphicSet)}"),
+            };
         }
     }
 
@@ -651,19 +647,14 @@ namespace AribB24.DotNet
     {
         public static byte ConvertAs(this byte value, DecodeCondition cond)
         {
-            switch (cond)
+            return cond switch
             {
-                case DecodeCondition.Never:
-                    throw new InvalidOperationException();
-                case DecodeCondition.RequireNoConv:
-                    return value;
-                case DecodeCondition.RequireConvToGL:
-                    return (byte)(value & 0b_0111_1111);
-                case DecodeCondition.RequireConvToGR:
-                    return (byte)(value | 0b_1000_0000);
-                default:
-                    throw new InvalidOperationException($"未定義の {nameof(DecodeCondition)}");
-            }
+                DecodeCondition.RequireNoConv => value,
+                DecodeCondition.RequireConvToGL => (byte)(value & 0b_0111_1111),
+                DecodeCondition.RequireConvToGR => (byte)(value | 0b_1000_0000),
+                DecodeCondition.Never => throw new InvalidOperationException(),
+                _ => throw new InvalidOperationException($"未定義の {nameof(DecodeCondition)}"),
+            };
         }
     }
 }
